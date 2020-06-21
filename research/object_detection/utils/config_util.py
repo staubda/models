@@ -234,6 +234,8 @@ def get_configs_from_multiple_files(model_config_path="",
                                     graph_rewriter_config_path=""):
   """Reads training configuration from multiple config files.
 
+  Patched to allow COCO eval to work.
+
   Args:
     model_config_path: Path to model_pb2.DetectionModel.
     train_config_path: Path to train_pb2.TrainConfig.
@@ -277,6 +279,8 @@ def get_configs_from_multiple_files(model_config_path="",
     with tf.gfile.GFile(eval_input_config_path, "r") as f:
       text_format.Merge(f.read(), eval_input_config)
       configs["eval_input_configs"] = [eval_input_config]
+      if configs["eval_input_configs"]:
+        configs["eval_input_config"] = configs["eval_input_configs"][0]
 
   if graph_rewriter_config_path:
     configs["graph_rewriter_config"] = get_graph_rewriter_config_from_file(
