@@ -361,6 +361,46 @@ class WeightedSigmoidClassificationLossTest(test_case.TestCase):
     loss_output = self.execute(graph_fn, [])
     self.assertAllClose(loss_output, exp_loss)
 
+  def testReturnsCorrectLossWithClassMask(self):
+    def graph_fn():
+      prediction_tensor = tf.constant([[[-100, 100, -100, 100],
+                                        [100, -100, -100, -100],
+                                        [100, 0, -100, 100],
+                                        [-100, -100, 100, -100]],
+                                       [[-100, 0, 100, 100],
+                                        [-100, 100, -100, 100],
+                                        [100, 100, 100, 100],
+                                        [0, 0, -1, 100]]], tf.float32)
+      target_tensor = tf.constant([[[0, 1, 0, 0],
+                                    [1, 0, 0, 1],
+                                    [1, 0, 0, 0],
+                                    [0, 0, 1, 1]],
+                                   [[0, 0, 1, 0],
+                                    [0, 1, 0, 0],
+                                    [1, 1, 1, 0],
+                                    [1, 0, 0, 0]]], tf.float32)
+      weights = tf.constant([[[1, 1, 1, 1],
+                              [1, 1, 1, 1],
+                              [1, 1, 1, 1],
+                              [1, 1, 1, 1]],
+                             [[1, 1, 1, 1],
+                              [1, 1, 1, 1],
+                              [1, 1, 1, 1],
+                              [0, 0, 0, 0]]], tf.float32)
+      # Ignores the last class.
+      class_mask = tf.constant([[1, 1, 1, 0],
+                                [1, 1, 1, 0]], tf.int64)
+      # class_indices = tf.constant([0, 1, 2], tf.int32)
+      loss_op = losses.WeightedSigmoidClassificationLoss()
+      loss = loss_op(prediction_tensor, target_tensor, weights=weights,
+                     class_mask=class_mask)
+      loss = tf.reduce_sum(loss, axis=2)
+      return loss
+
+    exp_loss = np.matrix([[0, 0, -math.log(.5), 0],
+                          [-math.log(.5), 0, 0, 0]])
+    loss_output = self.execute(graph_fn, [])
+    self.assertAllClose(loss_output, exp_loss)
 
 def _logit(probability):
   return math.log(probability / (1. - probability))
