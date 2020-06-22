@@ -1345,6 +1345,34 @@ class TfExampleDecoderTest(test_case.TestCase):
         expected_image_confidence,
         tensor_dict[fields.InputDataFields.groundtruth_image_confidences])
 
+  def testDecodeLabeledClasses(self):
+    image_tensor = np.random.randint(256, size=(4, 5, 3)).astype(np.uint8)
+    encoded_jpeg, _ = self._create_encoded_and_decoded_data(
+        image_tensor, 'jpeg')
+    labeled_classes = [2, 7, 5]
+
+    def graph_fn():
+      example = tf.train.Example(
+          features=tf.train.Features(
+              feature={
+                  'image/encoded':
+                      dataset_util.bytes_feature(encoded_jpeg),
+                  'image/format':
+                      dataset_util.bytes_feature(six.b('jpeg')),
+                  'image/class/labeled_classes':
+                      dataset_util.int64_list_feature(labeled_classes),
+              })).SerializeToString()
+
+      example_decoder = tf_example_decoder.TfExampleDecoder()
+      output = example_decoder.decode(tf.convert_to_tensor(example))
+
+      return output
+
+    tensor_dict = self.execute_cpu(graph_fn, [])
+    self.assertAllEqual(
+        labeled_classes,
+        tensor_dict[fields.InputDataFields.groundtruth_labeled_classes])
+
 
 if __name__ == '__main__':
   tf.test.main()
