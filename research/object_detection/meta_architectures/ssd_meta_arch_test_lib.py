@@ -137,9 +137,10 @@ class SSDMetaArchTestBase(test_case.TestCase):
       use_static_shapes=False,
       nms_max_size_per_class=5,
       calibration_mapping_value=None,
-      return_raw_detections_during_predict=False):
+      return_raw_detections_during_predict=False,
+      num_classes=1):
     is_training = False
-    num_classes = 1
+    # num_classes = 1
     mock_anchor_generator = MockAnchorGenerator2x2()
     use_keras = tf_version.is_tf2()
     if use_keras:

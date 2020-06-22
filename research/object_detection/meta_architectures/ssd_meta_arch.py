@@ -30,6 +30,7 @@ from object_detection.utils import ops
 from object_detection.utils import shape_utils
 from object_detection.utils import variables_helper
 from object_detection.utils import visualization_utils
+# from object_detection.inputs import _convert_labeled_classes_to_k_hot
 
 
 # pylint: disable=g-import-not-at-top
@@ -902,6 +903,15 @@ class SSDMetaArch(model.DetectionModel):
         losses_mask = tf.stack(self.groundtruth_lists(
             fields.InputDataFields.is_annotated))
 
+      class_mask = None
+      if self.groundtruth_has_field(fields.InputDataFields.groundtruth_labeled_classes):
+          class_mask = tf.stack(self.groundtruth_lists(
+              fields.InputDataFields.groundtruth_labeled_classes))
+          # class_mask = tf.stack([
+          #     _convert_labeled_classes_to_k_hot(class_ids, batch_cls_targets.get_shape()[2])
+          #     for class_ids in
+          #     self.groundtruth_lists(fields.InputDataFields.groundtruth_labeled_classes)
+          # ])
 
       location_losses = self._localization_loss(
           prediction_dict['box_encodings'],
@@ -914,7 +924,8 @@ class SSDMetaArch(model.DetectionModel):
           prediction_dict['class_predictions_with_background'],
           batch_cls_targets,
           weights=batch_cls_weights,
-          losses_mask=losses_mask)
+          losses_mask=losses_mask,
+          class_mask=class_mask)
 
       if self._expected_loss_weights_fn:
         # Need to compute losses for assigned targets against the
@@ -929,7 +940,8 @@ class SSDMetaArch(model.DetectionModel):
             prediction_dict['class_predictions_with_background'],
             unmatched_targets,
             weights=batch_cls_weights,
-            losses_mask=losses_mask)
+            losses_mask=losses_mask,
+            class_mask=class_mask)
 
         if cls_losses.get_shape().ndims == 3:
           batch_size, num_anchors, num_classes = cls_losses.get_shape()
