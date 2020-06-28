@@ -905,8 +905,9 @@ class SSDMetaArch(model.DetectionModel):
 
       class_mask = None
       if self.groundtruth_has_field(fields.InputDataFields.groundtruth_labeled_classes):
-          class_mask = tf.stack(self.groundtruth_lists(
-              fields.InputDataFields.groundtruth_labeled_classes))
+          class_mask = tf.stack(self.groundtruth_lists(fields.InputDataFields.groundtruth_labeled_classes))
+          if self._add_background_class:
+              class_mask = tf.pad(class_mask, [[0, 0], [1, 0]], mode='CONSTANT', constant_values=1)
           # class_mask = tf.stack([
           #     _convert_labeled_classes_to_k_hot(class_ids, batch_cls_targets.get_shape()[2])
           #     for class_ids in

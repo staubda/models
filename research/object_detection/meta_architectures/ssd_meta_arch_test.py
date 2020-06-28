@@ -59,7 +59,8 @@ class SsdMetaArchTest(ssd_meta_arch_test_lib.SSDMetaArchTestBase,
       use_static_shapes=False,
       nms_max_size_per_class=5,
       calibration_mapping_value=None,
-      return_raw_detections_during_predict=False):
+      return_raw_detections_during_predict=False,
+      num_classes=1):
     return super(SsdMetaArchTest, self)._create_model(
         model_fn=ssd_meta_arch.SSDMetaArch,
         apply_hard_mining=apply_hard_mining,
@@ -74,7 +75,9 @@ class SsdMetaArchTest(ssd_meta_arch_test_lib.SSDMetaArchTestBase,
         nms_max_size_per_class=nms_max_size_per_class,
         calibration_mapping_value=calibration_mapping_value,
         return_raw_detections_during_predict=(
-            return_raw_detections_during_predict))
+            return_raw_detections_during_predict),
+        num_classes=num_classes
+    )
 
   def test_preprocess_preserves_shapes_with_dynamic_input_image(self):
     width = tf.random.uniform([], minval=5, maxval=10, dtype=tf.int32)
@@ -555,39 +558,79 @@ class SsdMetaArchTest(ssd_meta_arch_test_lib.SSDMetaArchTestBase,
   def test_loss_results_are_correct_with_class_masks(self):
     with test_utils.GraphContextOrNone() as g:
       model, num_classes, num_anchors, _ = self._create_model(
-          apply_hard_mining=False)
+          apply_hard_mining=False, num_classes=2)
     def graph_fn(preprocessed_tensor, groundtruth_boxes1, groundtruth_boxes2,
                  groundtruth_classes1, groundtruth_classes2):
       groundtruth_boxes_list = [groundtruth_boxes1, groundtruth_boxes2]
       groundtruth_classes_list = [groundtruth_classes1, groundtruth_classes2]
       is_annotated_list = [tf.constant(True), tf.constant(True)]
-      # class_mask_list = [np.array([[0, 1]], dtype=np.float32),
-      #                    np.array([[0, 1]], dtype=np.float32)]
-      class_mask_list = [np.array([[1]], dtype=np.float32),
-                         np.array([[1]], dtype=np.float32)]
+      class_mask_list = [class_mask1, class_mask2]
       model.provide_groundtruth(groundtruth_boxes_list,
                                 groundtruth_classes_list,
                                 is_annotated_list=is_annotated_list,
                                 groundtruth_labeled_classes=class_mask_list)
       prediction_dict = model.predict(preprocessed_tensor,
                                       true_image_shapes=None)
+
+      # Override predictions with hardcoded values. Predictions will vary across
+      # class labels, but not across image or anchor.
+      pred_background = logit_background * np.ones([batch_size, num_anchors], dtype=np.float32)
+      pred_class1 = logit_class1 * np.ones([batch_size, num_anchors], dtype=np.float32)
+      pred_class2 = logit_class2 * np.ones([batch_size, num_anchors], dtype=np.float32)
+      pred = np.stack([pred_background, pred_class1, pred_class2], axis=-1)
+      prediction_dict['class_predictions_with_background'] = pred
+
       loss_dict = model.loss(prediction_dict, true_image_shapes=None)
       return (self._get_value_for_matching_key(loss_dict,
                                                'Loss/localization_loss'),
               self._get_value_for_matching_key(loss_dict,
                                                'Loss/classification_loss'))
 
+    # The first anchor box (of 4) will be matched against, and assigned the labels
+    # of, the first ground truth box as specified here. Due to the MockMatcher
+    # the remaining 3 anchor boxes will be assigned to the background class
+    # regardless of any other ground truth boxes/labels supplied.
+    label_background = 0.0  # will default to 1 for all but the first anchor
+    label_class1 = 1.0  # will default to 0 for all but the first anchor
+    label_class2 = 1.0  # will default to 0 for all but the first anchor
+
+    logit_background = 0.5
+    logit_class1 = 0.1
+    logit_class2 = 0.9
+
+    with tf.Session().as_default():
+        loss_background = tf.nn.sigmoid_cross_entropy_with_logits(
+            labels=label_background, logits=logit_background).eval()
+        loss_class1 = tf.nn.sigmoid_cross_entropy_with_logits(
+            labels=label_class1, logits=logit_class1).eval()
+        loss_class2 = tf.nn.sigmoid_cross_entropy_with_logits(
+            labels=label_class2, logits=logit_class2).eval()
+        loss_def_background = tf.nn.sigmoid_cross_entropy_with_logits(
+            labels=1.0, logits=logit_background).eval()
+        loss_def_class1 = tf.nn.sigmoid_cross_entropy_with_logits(
+            labels=0.0, logits=logit_class1).eval()
+        loss_def_class2 = tf.nn.sigmoid_cross_entropy_with_logits(
+            labels=0.0, logits=logit_class2).eval()
+
     batch_size = 2
     preprocessed_input = np.random.rand(batch_size, 2, 2, 3).astype(np.float32)
     groundtruth_boxes1 = np.array([[0, 0, .5, .5]], dtype=np.float32)
     groundtruth_boxes2 = np.array([[0, 0, .5, .5]], dtype=np.float32)
-    groundtruth_classes1 = np.array([[1]], dtype=np.float32)
-    groundtruth_classes2 = np.array([[1]], dtype=np.float32)
-    expected_localization_loss = 0.0
-    # Note that we are subtracting 1 from batch_size, since the final image is
-    # not annotated.
-    expected_classification_loss = (batch_size * num_anchors
-                                    * (num_classes+1) * np.log(2.0))
+    groundtruth_classes1 = np.array([[label_class1, label_class2]], dtype=np.float32)
+    groundtruth_classes2 = np.array([[label_class1, label_class2]], dtype=np.float32)
+    class_mask1 = np.array([1, 0], dtype=np.float32)
+    class_mask2 = np.array([0, 1], dtype=np.float32)
+
+    expected_classification_loss_img1 = (
+        (num_anchors - 1) * (loss_def_background + class_mask1.dot([loss_def_class1, loss_def_class2]))
+        + loss_background + class_mask1.dot([loss_class1, loss_class2])
+    )
+    expected_classification_loss_img2 = (
+            (num_anchors - 1) * (loss_def_background + class_mask2.dot([loss_def_class1, loss_def_class2]))
+            + loss_background + class_mask2.dot([loss_class1, loss_class2])
+    )
+    expected_classification_loss = expected_classification_loss_img1 + expected_classification_loss_img2
+
     (localization_loss,
      classification_loss) = self.execute(graph_fn, [preprocessed_input,
                                                     groundtruth_boxes1,
@@ -595,8 +638,52 @@ class SsdMetaArchTest(ssd_meta_arch_test_lib.SSDMetaArchTestBase,
                                                     groundtruth_classes1,
                                                     groundtruth_classes2],
                                          graph=g)
-    self.assertAllClose(localization_loss, expected_localization_loss)
+
     self.assertAllClose(classification_loss, expected_classification_loss)
+    self.assertNotAllClose(expected_classification_loss_img1, expected_classification_loss_img2)
+  # def test_loss_results_are_correct_with_class_masks(self):
+  #   with test_utils.GraphContextOrNone() as g:
+  #     model, num_classes, num_anchors, _ = self._create_model(
+  #         apply_hard_mining=False)
+  #     print(f'\n\n\nnum classes: {num_classes}, num anchors: {num_anchors}\n\n\n')
+  #   def graph_fn(preprocessed_tensor, groundtruth_boxes1, groundtruth_boxes2,
+  #                groundtruth_classes1, groundtruth_classes2):
+  #     groundtruth_boxes_list = [groundtruth_boxes1, groundtruth_boxes2]
+  #     groundtruth_classes_list = [groundtruth_classes1, groundtruth_classes2]
+  #     is_annotated_list = [tf.constant(True), tf.constant(True)]
+  #     class_mask_list = [np.array([1], dtype=np.float32),
+  #                        np.array([1], dtype=np.float32)]
+  #     model.provide_groundtruth(groundtruth_boxes_list,
+  #                               groundtruth_classes_list,
+  #                               is_annotated_list=is_annotated_list,
+  #                               groundtruth_labeled_classes=class_mask_list)
+  #     prediction_dict = model.predict(preprocessed_tensor,
+  #                                     true_image_shapes=None)
+  #     print(f'\n\n\npred dict: {prediction_dict}\n\n\n')
+  #     loss_dict = model.loss(prediction_dict, true_image_shapes=None)
+  #     return (self._get_value_for_matching_key(loss_dict,
+  #                                              'Loss/localization_loss'),
+  #             self._get_value_for_matching_key(loss_dict,
+  #                                              'Loss/classification_loss'))
+  #
+  #   batch_size = 2
+  #   preprocessed_input = np.random.rand(batch_size, 2, 2, 3).astype(np.float32)
+  #   groundtruth_boxes1 = np.array([[0, 0, .5, .5]], dtype=np.float32)
+  #   groundtruth_boxes2 = np.array([[0, 0, .5, .5]], dtype=np.float32)
+  #   groundtruth_classes1 = np.array([[1]], dtype=np.float32)
+  #   groundtruth_classes2 = np.array([[1]], dtype=np.float32)
+  #   expected_localization_loss = 0.0
+  #   expected_classification_loss = (batch_size * num_anchors
+  #                                   * (num_classes+1) * np.log(2.0))
+  #   (localization_loss,
+  #    classification_loss) = self.execute(graph_fn, [preprocessed_input,
+  #                                                   groundtruth_boxes1,
+  #                                                   groundtruth_boxes2,
+  #                                                   groundtruth_classes1,
+  #                                                   groundtruth_classes2],
+  #                                        graph=g)
+  #   self.assertAllClose(localization_loss, expected_localization_loss)
+  #   self.assertAllClose(classification_loss, expected_classification_loss)
 
   def test_restore_map_for_detection_ckpt(self):
     # TODO(rathodv): Support TF2.X
