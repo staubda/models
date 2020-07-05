@@ -903,16 +903,21 @@ class SSDMetaArch(model.DetectionModel):
         losses_mask = tf.stack(self.groundtruth_lists(
             fields.InputDataFields.is_annotated))
 
+      # class_mask = None
+      # if self.groundtruth_has_field(fields.InputDataFields.groundtruth_labeled_classes):
+      #     class_mask = tf.stack(self.groundtruth_lists(fields.InputDataFields.groundtruth_labeled_classes))
+      #     if self._add_background_class:
+      #         class_mask = tf.pad(class_mask, [[0, 0], [1, 0]], mode='CONSTANT', constant_values=1)
       class_mask = None
       if self.groundtruth_has_field(fields.InputDataFields.groundtruth_labeled_classes):
+          # class_mask = tf.stack([tf.constant([0, 1, 0, 0, 0, 0, 0], dtype=tf.int64)
+          #                        for _ in self.groundtruth_lists(fields.InputDataFields.groundtruth_labeled_classes)])
           class_mask = tf.stack(self.groundtruth_lists(fields.InputDataFields.groundtruth_labeled_classes))
           if self._add_background_class:
-              class_mask = tf.pad(class_mask, [[0, 0], [1, 0]], mode='CONSTANT', constant_values=1)
-          # class_mask = tf.stack([
-          #     _convert_labeled_classes_to_k_hot(class_ids, batch_cls_targets.get_shape()[2])
-          #     for class_ids in
-          #     self.groundtruth_lists(fields.InputDataFields.groundtruth_labeled_classes)
-          # ])
+              # class_mask = tf.pad(class_mask, [[0, 0], [1, 0]], mode='CONSTANT', constant_values=1)
+              class_mask = tf.pad(class_mask, [[0, 0], [1, 0]], mode='CONSTANT', constant_values=0)
+
+      # class_mask *= 0
 
       location_losses = self._localization_loss(
           prediction_dict['box_encodings'],
@@ -992,6 +997,9 @@ class SSDMetaArch(model.DetectionModel):
                                        localization_loss_normalizer),
                                       localization_loss,
                                       name='localization_loss')
+
+      localization_loss *= 0
+
       classification_loss = tf.multiply((self._classification_loss_weight /
                                          normalizer), classification_loss,
                                         name='classification_loss')
@@ -1293,6 +1301,9 @@ class SSDMetaArch(model.DetectionModel):
       losses.extend(self._box_predictor.losses)
     if self._feature_extractor.is_keras_model:
       losses.extend(self._feature_extractor.losses)
+
+    losses = [loss*0 for loss in losses]
+
     return losses
 
   def restore_map(self,

@@ -37,19 +37,6 @@ class FloatParser(data_parser.DataToNumpyParser):
             self.field_name].HasField("float_list") else None
 
 
-# class StringParser(data_parser.DataToNumpyParser):
-#   """Tensorflow Example string parser.
-#
-#   Patched to allow COCO eval to work.
-#   """
-#
-#   def __init__(self, field_name):
-#     self.field_name = field_name
-#
-#   def parse(self, tf_example):
-#     return b"".join(tf_example.features.feature[
-#         self.field_name].bytes_list.value) if tf_example.features.feature[
-#             self.field_name].HasField("bytes_list") else None
 class StringParser(data_parser.DataToNumpyParser):
   """Tensorflow Example string parser.
 
