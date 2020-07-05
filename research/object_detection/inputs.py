@@ -199,6 +199,7 @@ def transform_input_data(tensor_dict,
   labeled_classes_field = fields.InputDataFields.groundtruth_labeled_classes
   image_classes_field = fields.InputDataFields.groundtruth_image_classes
 
+  # TODO - figure out how to make image_classes and labeled_classes play nice
   # if (labeled_classes_field in out_tensor_dict and
   #     image_classes_field in out_tensor_dict):
   #   raise KeyError('groundtruth_labeled_classes and groundtruth_image_classes'
@@ -212,6 +213,7 @@ def transform_input_data(tensor_dict,
     out_tensor_dict[labeled_classes_field] = _convert_labeled_classes_to_k_hot(
         out_tensor_dict[labeled_classes_field], num_classes)
 
+  # TODO - figure out how to make image_classes and labeled_classes play nice
   # if image_classes_field in out_tensor_dict:
   #   out_tensor_dict[labeled_classes_field] = _convert_labeled_classes_to_k_hot(
   #       out_tensor_dict[image_classes_field], num_classes)
@@ -505,11 +507,6 @@ def pad_input_data_to_static_shapes(tensor_dict,
         tf.minimum(
             padded_tensor_dict[fields.InputDataFields.num_groundtruth_boxes],
             max_num_boxes))
-
-  print('\n\n\n')
-  print('padded_tensor_dict')
-  print(padded_tensor_dict['groundtruth_labeled_classes'])
-  print('\n\n\n')
 
   return padded_tensor_dict
 
